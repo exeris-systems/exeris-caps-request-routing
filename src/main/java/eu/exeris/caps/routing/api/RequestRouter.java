@@ -18,14 +18,14 @@ public interface RequestRouter {
     /**
      * Resolves an inbound request by HTTP method and URI path.
      *
-     * @param method HTTP method (e.g. "GET", "POST"), or {@code null} to ignore method
+     * @param method HTTP method (e.g. "GET", "POST"); a {@code null} method matches only routes with no method constraint
      * @param path   inbound request-target path; a {@code null} path does not match
      * @return the match result; never {@code null} (returns {@link RouteMatch#noMatch()} if unmatched)
      */
     RouteMatch match(String method, CharSequence path);
 
     /**
-     * Convenience overload matching on path alone regardless of method.
+     * Convenience overload for a request without a method: only routes with no method constraint can match.
      *
      * @param path inbound request-target path; a {@code null} path does not match
      * @return the match result; never {@code null}

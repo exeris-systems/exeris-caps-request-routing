@@ -25,7 +25,7 @@ Layer 3 gateway policy cap. Provides `RequestRouter`: a radix-tree matcher over 
 `{template}` routes, with method filtering, deterministic precedence (`order`, then `id`), path rewrite
 (`stripPrefix`, `prefixRewrite`, `exactRewrite`) and request/response header mutation, built through
 `RequestRouters.builder()`. One compile dependency, `exeris-kernel-spi`, used only for the `RequestRoutingEntitlement` requirement; no
-`@Requires`. 49 tests across six classes.
+`@Requires`. Test totals are in the surefire report of the current head.
 
 Gaps between the inventory and the code, found in the code:
 
