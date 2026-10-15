@@ -1,6 +1,6 @@
 # exeris-caps-request-routing
 
-L7 request routing as an Exeris capability. `RequestRouter` resolves an HTTP method and path against a route table that is compiled into a radix tree and returns a `RouteMatch`.
+L7 request routing as an Exeris capability. `RequestRouter` resolves an HTTP method and path against a route table that is compiled into a radix tree and returns a `RouteMatch`, or fills a caller-owned `RouteLookup` without allocating.
 
 Status: proof of concept, built against `exeris-kernel` 0.13.0-SNAPSHOT on JDK 25 LTS. The API is not stable and no artefact has been published.
 
