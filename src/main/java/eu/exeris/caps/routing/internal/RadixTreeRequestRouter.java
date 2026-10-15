@@ -184,7 +184,7 @@ public final class RadixTreeRequestRouter implements RequestRouter {
     }
 
     private Node findOrCreateLiteralChild(Node current, String literal) {
-        for (Node child : current.children) {
+        for (Node child : current.childBuild) {
             if (child.paramName == null && child.edge.equals(literal)) {
                 return child;
             }

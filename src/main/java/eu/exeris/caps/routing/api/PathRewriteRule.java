@@ -113,7 +113,9 @@ public final class PathRewriteRule {
 
     /**
      * A path beginning with two slashes reads as a network-path reference (an authority) to a consumer that
-     * assembles a URI, so a rewritten path begins with exactly one.
+     * assembles a URI, so the results of {@link RewriteType#STRIP_PREFIX} and {@link RewriteType#PREFIX_REWRITE}
+     * begin with exactly one. The other rule types return their input or replacement unchanged; the guarantee
+     * for every type is applied by the router's path rewriter.
      */
     private static String singleLeadingSlash(String rewritten) {
         int i = 0;
