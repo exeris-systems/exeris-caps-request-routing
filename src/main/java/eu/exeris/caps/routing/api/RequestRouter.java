@@ -6,10 +6,10 @@ import java.util.List;
  * High-performance L7 request router contract.
  *
  * <p>Resolves incoming HTTP requests by method and path against a pre-compiled,
- * lock-free Radix Tree route table, returning a {@link RouteMatch}.
+ * immutable route table, returning a {@link RouteMatch}.
  *
- * <p>All implementations must be thread-safe, non-blocking, and allocation-free
- * on the lookup hot path.
+ * <p>All implementations must be thread-safe and non-blocking: a lookup takes no locks and never waits.
+ * A lookup may allocate (the match result, captured parameters and the rewritten path are new objects).
  *
  * @since 0.1.0
  */

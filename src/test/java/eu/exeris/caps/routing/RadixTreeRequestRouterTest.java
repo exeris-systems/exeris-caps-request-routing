@@ -10,6 +10,8 @@ import eu.exeris.caps.routing.api.Route;
 import eu.exeris.caps.routing.api.RouteMatch;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.Map;
@@ -153,5 +155,76 @@ class RadixTreeRequestRouterTest {
         RouteMatch match = router.match("GET", "/unknown/path");
         assertThat(match.isMatched()).isFalse();
         assertThat(match.route()).isNull();
+    }
+
+    @Test
+    @DisplayName("templates sharing a prefix capture under their own placeholder names")
+    void templatesCaptureUnderOwnNames() {
+        RequestRouter router = RequestRouters.builder()
+                .route("first").pathTemplate("/a/{x}/b").targetUri("http://u1:9000").and()
+                .route("second").pathTemplate("/a/{y}/c").targetUri("http://u2:9000").and()
+                .build();
+
+        RouteMatch first = router.match("GET", "/a/1/b");
+        RouteMatch second = router.match("GET", "/a/2/c");
+
+        assertThat(first.route().id()).isEqualTo("first");
+        assertThat(first.pathParams()).containsOnly(Map.entry("x", "1"));
+        assertThat(second.route().id()).isEqualTo("second");
+        assertThat(second.pathParams()).containsOnly(Map.entry("y", "2"));
+        assertThat(second.pathParam("x")).isNull();
+    }
+
+    @Test
+    @DisplayName("a template placeholder requires a non-empty segment")
+    void placeholderRequiresNonEmptySegment() {
+        RequestRouter router = RequestRouters.builder()
+                .route("item").pathTemplate("/a/{id}").targetUri("http://u:9000").and()
+                .build();
+
+        assertThat(router.match("GET", "/a/").isMatched()).isFalse();
+        assertThat(router.match("GET", "/a/7").pathParam("id")).isEqualTo("7");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("the longest prefix wins at equal order, whichever route was registered first")
+    void longestPrefixWinsRegardlessOfRegistrationOrder(boolean shortFirst) {
+        var builder = RequestRouters.builder();
+        if (shortFirst) {
+            builder.route("short").pathPrefix("/api").targetUri("http://u1:9000").and()
+                    .route("long").pathPrefix("/api/v1").targetUri("http://u2:9000").and();
+        } else {
+            builder.route("long").pathPrefix("/api/v1").targetUri("http://u2:9000").and()
+                    .route("short").pathPrefix("/api").targetUri("http://u1:9000").and();
+        }
+        RequestRouter router = builder.build();
+
+        assertThat(router.match("GET", "/api/v1/x").route().id()).isEqualTo("long");
+        assertThat(router.match("GET", "/api/v1").route().id()).isEqualTo("long");
+        assertThat(router.match("GET", "/api/v2/x").route().id()).isEqualTo("short");
+        assertThat(router.match("GET", "/api").route().id()).isEqualTo("short");
+    }
+
+    @Test
+    @DisplayName("a route without a rewrite never yields a path that begins with two slashes")
+    void noRewriteCollapsesLeadingDoubleSlash() {
+        RequestRouter router = RequestRouters.builder()
+                .route("root").pathPrefix("/").targetUri("http://u:9000").and()
+                .build();
+
+        assertThat(router.match("GET", "//host/path").rewrittenPath()).isEqualTo("/host/path");
+        assertThat(router.match("GET", "//host/path?q=1").rewrittenPath()).isEqualTo("/host/path?q=1");
+        assertThat(router.match("GET", "/plain").rewrittenPath()).isEqualTo("/plain");
+    }
+
+    @Test
+    @DisplayName("a path without a leading slash is rewritten as if it had one")
+    void rewriteUsesNormalisedPath() {
+        RequestRouter router = RequestRouters.builder()
+                .route("api").pathPrefix("/api").targetUri("http://u:9000").stripPrefix("/api").and()
+                .build();
+
+        assertThat(router.match("GET", "api/x").rewrittenPath()).isEqualTo("/x");
     }
 }

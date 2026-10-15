@@ -19,6 +19,12 @@ import java.util.Objects;
  * <p>Supports exact, parameterized template ({@code {placeholder}}), and longest-prefix routes
  * with method-specific filtering and deterministic precedence.
  *
+ * <p>Precedence: an exact route beats a template route, which beats a prefix route. Among prefix routes
+ * the longest prefix wins and {@code order} breaks ties on the same prefix. Within one path pattern a
+ * route naming the request method beats a method-agnostic (wildcard) route, whatever their {@code order}.
+ * A template placeholder captures one non-empty segment, so {@code /a/} does not match {@code /a/{id}}.
+ * A path without a leading slash is treated as if it had one.
+ *
  * @since 0.1.0
  */
 public final class RadixTreeRequestRouter implements RequestRouter {
@@ -96,14 +102,14 @@ public final class RadixTreeRequestRouter implements RequestRouter {
                 splitNode.prefixRoutes.addAll(matchingChild.prefixRoutes);
                 splitNode.templateRoutes.addAll(matchingChild.templateRoutes);
                 splitNode.children.addAll(matchingChild.children);
-                splitNode.paramChild = matchingChild.paramChild;
+                splitNode.paramChildren.addAll(matchingChild.paramChildren);
 
                 matchingChild.edge = edgeCommon;
                 matchingChild.exactRoutes.clear();
                 matchingChild.prefixRoutes.clear();
                 matchingChild.templateRoutes.clear();
                 matchingChild.children.clear();
-                matchingChild.paramChild = null;
+                matchingChild.paramChildren.clear();
                 matchingChild.addChild(splitNode);
             }
 
@@ -147,12 +153,21 @@ public final class RadixTreeRequestRouter implements RequestRouter {
         }
 
         String paramName = pattern.substring(braceStart + 1, braceEnd);
-        if (current.paramChild == null) {
-            current.paramChild = new Node("");
-            current.paramChild.paramName = paramName;
+        // One param node per placeholder name, so a route's captures always carry its own names
+        Node paramNode = null;
+        for (Node candidate : current.paramChildren) {
+            if (candidate.paramName.equals(paramName)) {
+                paramNode = candidate;
+                break;
+            }
+        }
+        if (paramNode == null) {
+            paramNode = new Node("");
+            paramNode.paramName = paramName;
+            current.paramChildren.add(paramNode);
         }
 
-        insertTemplateRoute(current.paramChild, pattern, braceEnd + 1, route);
+        insertTemplateRoute(paramNode, pattern, braceEnd + 1, route);
     }
 
     private Node findOrCreateLiteralChild(Node current, String literal) {
@@ -205,7 +220,9 @@ public final class RadixTreeRequestRouter implements RequestRouter {
             return RouteMatch.noMatch();
         }
 
-        String rewritten = ZeroAllocPathRewriter.rewrite(fullPath, best.rewriteRule());
+        // Rewrite the normalised path, so a request without a leading slash is rewritten like one with it
+        String normalised = queryIdx < 0 ? searchPath : searchPath + fullPath.substring(queryIdx);
+        String rewritten = ZeroAllocPathRewriter.rewrite(normalised, best.rewriteRule());
         return RouteMatch.matched(best, rewritten, ctx.params);
     }
 
@@ -239,19 +256,24 @@ public final class RadixTreeRequestRouter implements RequestRouter {
             }
         }
 
-        // Match param child if present
-        if (node.paramChild != null) {
+        // Match param children; a placeholder captures a non-empty segment
+        if (!node.paramChildren.isEmpty()) {
             int slashIdx = path.indexOf('/', offset);
             int nextOffset = slashIdx < 0 ? path.length() : slashIdx;
-            String paramVal = path.substring(offset, nextOffset);
-
-            ctx.addParam(node.paramChild.paramName, paramVal);
-            matchNode(node.paramChild, path, nextOffset, ctx);
-            if (ctx.hasMatch()) {
+            if (nextOffset == offset) {
                 return;
             }
-            // Backtrack if not matched
-            ctx.removeParam(node.paramChild.paramName);
+            String paramVal = path.substring(offset, nextOffset);
+
+            for (Node paramChild : node.paramChildren) {
+                ctx.addParam(paramChild.paramName, paramVal);
+                matchNode(paramChild, path, nextOffset, ctx);
+                if (ctx.hasMatch()) {
+                    return;
+                }
+                // Backtrack if not matched
+                ctx.removeParam(paramChild.paramName);
+            }
         }
     }
 
@@ -319,7 +341,7 @@ public final class RadixTreeRequestRouter implements RequestRouter {
         final List<Route> prefixRoutes = new ArrayList<>(2);
         final List<Route> templateRoutes = new ArrayList<>(2);
         final List<Node> children = new ArrayList<>(4);
-        Node paramChild;
+        final List<Node> paramChildren = new ArrayList<>(1);
 
         Node(String edge) {
             this.edge = Objects.requireNonNull(edge, "edge");
@@ -380,8 +402,10 @@ public final class RadixTreeRequestRouter implements RequestRouter {
         }
 
         void recordPrefixCandidates(List<Route> routes) {
+            // Candidates arrive shallowest first, so a later one is a longer prefix and always wins;
+            // order only decides among routes registered on the same prefix (see selectBest)
             Route chosen = selectBest(routes);
-            if (chosen != null && (prefixMatch == null || chosen.order() < prefixMatch.order())) {
+            if (chosen != null) {
                 prefixMatch = chosen;
             }
         }

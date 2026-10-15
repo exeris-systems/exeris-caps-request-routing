@@ -3,7 +3,7 @@ package eu.exeris.caps.routing.internal;
 import eu.exeris.caps.routing.api.PathRewriteRule;
 
 /**
- * Utility for applying path rewrites while minimizing allocations.
+ * Utility for applying path rewrites while minimizing allocations; the result never begins with {@code //}.
  */
 public final class ZeroAllocPathRewriter {
 
@@ -21,19 +21,24 @@ public final class ZeroAllocPathRewriter {
         if (fullPath == null || fullPath.length() == 0) {
             return "/";
         }
-        if (rewriteRule == null || rewriteRule.type() == PathRewriteRule.RewriteType.NONE) {
-            return fullPath.toString();
-        }
-
         String pathStr = fullPath.toString();
         int queryIdx = pathStr.indexOf('?');
         String pathOnly = queryIdx < 0 ? pathStr : pathStr.substring(0, queryIdx);
         String queryOnly = queryIdx < 0 ? "" : pathStr.substring(queryIdx);
 
-        String rewrittenBase = rewriteRule.rewrite(pathOnly);
-        if (queryOnly.isEmpty()) {
-            return rewrittenBase;
+        String rewrittenBase = rewriteRule == null ? pathOnly : rewriteRule.rewrite(pathOnly);
+        return singleLeadingSlash(rewrittenBase) + queryOnly;
+    }
+
+    /**
+     * Whatever the rewrite type, the result begins with at most one slash: a leading {@code //} reads as a
+     * network-path reference (an authority) to a consumer that assembles a URI.
+     */
+    private static String singleLeadingSlash(String path) {
+        int i = 0;
+        while (i + 1 < path.length() && path.charAt(i) == '/' && path.charAt(i + 1) == '/') {
+            i++;
         }
-        return rewrittenBase + queryOnly;
+        return i == 0 ? path : path.substring(i);
     }
 }

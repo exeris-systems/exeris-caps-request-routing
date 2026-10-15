@@ -3,7 +3,7 @@ package eu.exeris.caps.routing.api;
 import java.util.Objects;
 
 /**
- * Lightweight, allocation-free HTTP header key-value pair carrier.
+ * Lightweight, immutable HTTP header key-value pair carrier.
  *
  * <p>Free of transport framing, HPACK tables, and kernel wire dependencies.
  *

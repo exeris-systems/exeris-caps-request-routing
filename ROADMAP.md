@@ -24,7 +24,8 @@ Milestones are versions, not dates. Dates appear only on what has shipped; nothi
 Layer 3 gateway policy cap. Provides `RequestRouter`: a radix-tree matcher over exact, prefix and
 `{template}` routes, with method filtering, deterministic precedence (`order`, then `id`), path rewrite
 (`stripPrefix`, `prefixRewrite`, `exactRewrite`) and request/response header mutation, built through
-`RequestRouters.builder()`. Zero runtime dependencies; no `@Requires`. 13 tests across three classes.
+`RequestRouters.builder()`. One compile dependency, `exeris-kernel-spi`, used only for the `RequestRoutingEntitlement` requirement; no
+`@Requires`. 49 tests across six classes.
 
 Gaps between the inventory and the code, found in the code:
 
