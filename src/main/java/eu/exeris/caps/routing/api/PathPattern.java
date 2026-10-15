@@ -8,7 +8,8 @@ import java.util.Objects;
  * <p>Supported pattern kinds:
  * <ul>
  *   <li>{@link Kind#EXACT}: Matches the full request path exactly (e.g. {@code /health}).</li>
- *   <li>{@link Kind#PREFIX}: Matches paths starting with the specified prefix (e.g. {@code /api/v1/orders}).</li>
+ *   <li>{@link Kind#PREFIX}: Matches the prefix itself and the paths below it at a segment boundary (e.g. {@code /api/v1}
+ *       matches {@code /api/v1} and {@code /api/v1/orders}, not {@code /api/v1x}).</li>
  *   <li>{@link Kind#TEMPLATE}: Matches paths containing {@code {placeholder}} segments and captures their values.</li>
  * </ul>
  *

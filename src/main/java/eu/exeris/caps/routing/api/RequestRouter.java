@@ -19,7 +19,10 @@ public interface RequestRouter {
      * Resolves an inbound request by HTTP method and URI path.
      *
      * @param method HTTP method (e.g. "GET", "POST"); a {@code null} method matches only routes with no method constraint
-     * @param path   inbound request-target path; a {@code null} path does not match
+     * @param path   inbound request-target path; a {@code null} path does not match, a missing leading slash is
+     *               added, a query string is ignored for matching, and a path whose meaning depends on decoding
+     *               or normalisation (dot segments, encoded or literal backslashes and slashes inside a segment,
+     *               control characters) is never routed
      * @return the match result; never {@code null} (returns {@link RouteMatch#noMatch()} if unmatched)
      */
     RouteMatch match(String method, CharSequence path);
