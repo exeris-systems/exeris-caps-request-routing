@@ -13,11 +13,11 @@ import java.util.Objects;
  * @param rewriteRule             path rewriting rule; non-null
  * @param requestHeaderMutations  transformations to apply to inbound request headers; {@code null} is read as empty
  * @param responseHeaderMutations transformations to apply to upstream response headers; {@code null} is read as empty
- * @param order                   tie-break (lower is preferred) between routes of the same kind that compete
- *                                for one request: routes on the same pattern, and template routes on
- *                                different patterns. The route builder defaults it to 0. It never lifts a
- *                                route over a better kind (exact, then template, then prefix), a longer
- *                                prefix, or, on one pattern, a route that names the request method
+ * @param order                   tie-break (lower is preferred) between routes on the same path pattern. The
+ *                                route builder defaults it to 0. It never lifts a route over a better kind
+ *                                (exact, then template, then prefix), a longer prefix, a template reached
+ *                                earlier in the tree, or, on one pattern, a route that names the request
+ *                                method
  * @since 0.1.0
  */
 public record Route(
