@@ -24,6 +24,9 @@ public final class HeaderMutation {
         REMOVE,
         /**
          * Injects a value extracted from the authentication context (e.g. JWT claim "sub" as "X-User-Id").
+         * Applies to request headers only: it removes any client-supplied header of that name and adds the
+         * claim when it is present, not blank and safe in a header. In a route's response mutations it has no
+         * effect, and the route builder offers it for requests only.
          */
         INJECT_CLAIM
     }

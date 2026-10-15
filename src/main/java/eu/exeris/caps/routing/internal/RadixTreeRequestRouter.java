@@ -3,10 +3,11 @@ package eu.exeris.caps.routing.internal;
 import eu.exeris.caps.routing.api.PathPattern;
 import eu.exeris.caps.routing.api.RequestRouter;
 import eu.exeris.caps.routing.api.Route;
+import eu.exeris.caps.routing.api.RouteLookup;
 import eu.exeris.caps.routing.api.RouteMatch;
+import eu.exeris.caps.routing.api.PathRewriteRule;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -26,12 +27,22 @@ import java.util.Objects;
  * A path without a leading slash is treated as if it had one, and repeated leading slashes collapse to one,
  * so the route is chosen on the same path the upstream receives.
  *
+ * <p>Allocation: {@link #match(String, CharSequence, RouteLookup)} reads the path through index ranges (query
+ * excluded by position, leading-slash handling by offset) over arrays frozen at construction, and records
+ * the selection and any template captures in the caller's {@link RouteLookup}. In steady state it allocates
+ * nothing for exact, prefix and template routes alike; the lookup's capture arrays grow once, on the first
+ * match deeper than they have yet been. Reading {@code rewrittenPath()} or a captured value from the lookup
+ * builds a string and allocates, as {@link RouteLookup} states.
+ *
  * @since 0.1.0
  */
 public final class RadixTreeRequestRouter implements RequestRouter {
 
     private static final Comparator<Route> ROUTE_ORDER_COMPARATOR =
             Comparator.comparingInt(Route::order).thenComparing(Route::id);
+
+    private static final Route[] NO_ROUTES = new Route[0];
+    private static final Node[] NO_NODES = new Node[0];
 
     private final List<Route> allRoutes;
     private final Node root;
@@ -41,6 +52,7 @@ public final class RadixTreeRequestRouter implements RequestRouter {
         this.allRoutes = List.copyOf(routes);
         this.root = new Node("");
         buildTree(this.allRoutes);
+        root.freeze();
     }
 
     private void buildTree(List<Route> routes) {
@@ -71,7 +83,7 @@ public final class RadixTreeRequestRouter implements RequestRouter {
 
         while (!remaining.isEmpty()) {
             Node matchingChild = null;
-            for (Node child : node.children) {
+            for (Node child : node.childBuild) {
                 if (child.paramName == null && !child.edge.isEmpty() && child.edge.charAt(0) == remaining.charAt(0)) {
                     matchingChild = child;
                     break;
@@ -82,9 +94,9 @@ public final class RadixTreeRequestRouter implements RequestRouter {
                 // Add new child with remaining edge
                 Node newChild = new Node(remaining);
                 if (kind == PathPattern.Kind.EXACT) {
-                    newChild.exactRoutes.add(route);
+                    newChild.exactBuild.add(route);
                 } else {
-                    newChild.prefixRoutes.add(route);
+                    newChild.prefixBuild.add(route);
                 }
                 node.addChild(newChild);
                 return;
@@ -99,18 +111,18 @@ public final class RadixTreeRequestRouter implements RequestRouter {
                 String edgeChildRemaining = matchingChild.edge.substring(commonLen);
 
                 Node splitNode = new Node(edgeChildRemaining);
-                splitNode.exactRoutes.addAll(matchingChild.exactRoutes);
-                splitNode.prefixRoutes.addAll(matchingChild.prefixRoutes);
-                splitNode.templateRoutes.addAll(matchingChild.templateRoutes);
-                splitNode.children.addAll(matchingChild.children);
-                splitNode.paramChildren.addAll(matchingChild.paramChildren);
+                splitNode.exactBuild.addAll(matchingChild.exactBuild);
+                splitNode.prefixBuild.addAll(matchingChild.prefixBuild);
+                splitNode.templateBuild.addAll(matchingChild.templateBuild);
+                splitNode.childBuild.addAll(matchingChild.childBuild);
+                splitNode.paramBuild.addAll(matchingChild.paramBuild);
 
                 matchingChild.edge = edgeCommon;
-                matchingChild.exactRoutes.clear();
-                matchingChild.prefixRoutes.clear();
-                matchingChild.templateRoutes.clear();
-                matchingChild.children.clear();
-                matchingChild.paramChildren.clear();
+                matchingChild.exactBuild.clear();
+                matchingChild.prefixBuild.clear();
+                matchingChild.templateBuild.clear();
+                matchingChild.childBuild.clear();
+                matchingChild.paramBuild.clear();
                 matchingChild.addChild(splitNode);
             }
 
@@ -120,15 +132,15 @@ public final class RadixTreeRequestRouter implements RequestRouter {
 
         // Terminal node reached
         if (kind == PathPattern.Kind.EXACT) {
-            node.exactRoutes.add(route);
+            node.exactBuild.add(route);
         } else {
-            node.prefixRoutes.add(route);
+            node.prefixBuild.add(route);
         }
     }
 
     private void insertTemplateRoute(Node current, String pattern, int index, Route route) {
         if (index >= pattern.length()) {
-            current.templateRoutes.add(route);
+            current.templateBuild.add(route);
             return;
         }
 
@@ -156,7 +168,7 @@ public final class RadixTreeRequestRouter implements RequestRouter {
         String paramName = pattern.substring(braceStart + 1, braceEnd);
         // One param node per placeholder name, so a route's captures always carry its own names
         Node paramNode = null;
-        for (Node candidate : current.paramChildren) {
+        for (Node candidate : current.paramBuild) {
             if (candidate.paramName.equals(paramName)) {
                 paramNode = candidate;
                 break;
@@ -165,7 +177,7 @@ public final class RadixTreeRequestRouter implements RequestRouter {
         if (paramNode == null) {
             paramNode = new Node("");
             paramNode.paramName = paramName;
-            current.paramChildren.add(paramNode);
+            current.paramBuild.add(paramNode);
         }
 
         insertTemplateRoute(paramNode, pattern, braceEnd + 1, route);
@@ -197,100 +209,91 @@ public final class RadixTreeRequestRouter implements RequestRouter {
     }
 
     @Override
-    public RouteMatch match(String method, CharSequence path) {
-        if (path == null) {
-            return RouteMatch.noMatch();
-        }
-
-        String fullPath = path.toString();
-        int queryIdx = fullPath.indexOf('?');
-        String searchPath = queryIdx < 0 ? fullPath : fullPath.substring(0, queryIdx);
-        if (!searchPath.startsWith("/")) {
-            searchPath = "/" + searchPath;
-        }
-        // Routing and the upstream must see one path: leading slashes collapse to one before matching,
-        // the same way the rewriter collapses them, so //admin/x routes as /admin/x
-        int leading = 0;
-        while (leading + 1 < searchPath.length() && searchPath.charAt(leading + 1) == '/') {
-            leading++;
-        }
-        if (leading > 0) {
-            searchPath = searchPath.substring(leading);
-        }
-
-        if (!isCanonicalPath(searchPath)) {
-            return RouteMatch.noMatch();
-        }
-
-        MatchContext ctx = new MatchContext(method, searchPath);
-        matchNode(root, searchPath, 0, ctx);
-
-        Route best = ctx.bestRoute();
-        if (best == null) {
-            return RouteMatch.noMatch();
-        }
-
-        // Rewrite the normalised path, so a request without a leading slash is rewritten like one with it
-        String normalised = queryIdx < 0 ? searchPath : searchPath + fullPath.substring(queryIdx);
-        String rewritten = ZeroAllocPathRewriter.rewrite(normalised, best.rewriteRule());
-        return RouteMatch.matched(best, rewritten, ctx.params);
+    public RouteLookup newLookup() {
+        return new Lookup();
     }
 
-    private void matchNode(Node node, String path, int offset, MatchContext ctx) {
+    @Override
+    public boolean match(String method, CharSequence path, RouteLookup into) {
+        if (!(into instanceof Lookup lookup)) {
+            throw new IllegalArgumentException("lookup was not created by this router");
+        }
+        lookup.reset(method, path);
+        if (path == null || !lookup.frame() || !isCanonicalPath(lookup)) {
+            lookup.clear();
+            return false;
+        }
+
+        matchNode(root, 0, lookup);
+
+        Route best = lookup.bestRoute();
+        if (best == null) {
+            lookup.clear();
+            return false;
+        }
+        lookup.route = best;
+        return true;
+    }
+
+    private void matchNode(Node node, int offset, Lookup ctx) {
         // A prefix route applies only at a segment boundary: /api covers /api and /api/x, not /apix
-        if (!node.prefixRoutes.isEmpty() && atSegmentBoundary(path, offset)) {
+        if (node.prefixRoutes.length != 0 && atSegmentBoundary(ctx, offset)) {
             ctx.recordPrefixCandidates(node.prefixRoutes);
         }
 
-        if (offset == path.length()) {
+        final int length = ctx.viewLength;
+        if (offset == length) {
             // Exact node match
-            if (!node.exactRoutes.isEmpty()) {
+            if (node.exactRoutes.length != 0) {
                 ctx.recordExactCandidates(node.exactRoutes);
             }
-            if (!node.templateRoutes.isEmpty()) {
+            if (node.templateRoutes.length != 0) {
                 ctx.recordTemplateCandidates(node.templateRoutes);
             }
             return;
         }
 
         // Match literal children
-        char nextChar = path.charAt(offset);
-        for (Node child : node.children) {
-            if (child.paramName == null && !child.edge.isEmpty() && child.edge.charAt(0) == nextChar) {
-                if (path.startsWith(child.edge, offset)) {
-                    matchNode(child, path, offset + child.edge.length(), ctx);
-                    if (ctx.hasMatch()) {
-                        return;
-                    }
+        char nextChar = ctx.charAt(offset);
+        Node[] children = node.children;
+        for (int c = 0; c < children.length; c++) {
+            Node child = children[c];
+            if (child.edge.charAt(0) == nextChar && ctx.regionMatches(offset, child.edge)) {
+                matchNode(child, offset + child.edge.length(), ctx);
+                if (ctx.hasMatch()) {
+                    return;
                 }
             }
         }
 
         // Match param children; a placeholder captures a non-empty segment
-        if (!node.paramChildren.isEmpty()) {
-            int slashIdx = path.indexOf('/', offset);
-            int nextOffset = slashIdx < 0 ? path.length() : slashIdx;
+        Node[] paramChildren = node.paramChildren;
+        if (paramChildren.length != 0) {
+            int nextOffset = offset;
+            while (nextOffset < length && ctx.charAt(nextOffset) != '/') {
+                nextOffset++;
+            }
             if (nextOffset == offset) {
                 return;
             }
-            String paramVal = path.substring(offset, nextOffset);
 
-            for (Node paramChild : node.paramChildren) {
-                ctx.addParam(paramChild.paramName, paramVal);
-                matchNode(paramChild, path, nextOffset, ctx);
+            for (int c = 0; c < paramChildren.length; c++) {
+                Node paramChild = paramChildren[c];
+                ctx.pushParam(paramChild.paramName, offset, nextOffset);
+                matchNode(paramChild, nextOffset, ctx);
                 if (ctx.hasMatch()) {
                     return;
                 }
                 // Backtrack if not matched
-                ctx.removeParam(paramChild.paramName);
+                ctx.popParam();
             }
         }
     }
 
-    private static boolean atSegmentBoundary(String path, int offset) {
-        return offset == path.length()
-                || path.charAt(offset - 1) == '/'
-                || path.charAt(offset) == '/';
+    private static boolean atSegmentBoundary(Lookup ctx, int offset) {
+        return offset == ctx.viewLength
+                || ctx.charAt(offset - 1) == '/'
+                || ctx.charAt(offset) == '/';
     }
 
     /**
@@ -298,9 +301,9 @@ public final class RadixTreeRequestRouter implements RequestRouter {
      * normalisation is not routed: dot segments (literal or percent-encoded), percent-encoded or literal
      * path separators inside a segment, backslashes and control characters.
      */
-    private static boolean isCanonicalPath(String path) {
+    private static boolean isCanonicalPath(Lookup path) {
         int segmentStart = 0;
-        int length = path.length();
+        int length = path.viewLength;
         for (int i = 0; i <= length; i++) {
             char c = i < length ? path.charAt(i) : '/';
             if (i < length && (c < 0x20 || c == 0x7f || c == '\\')) {
@@ -319,13 +322,13 @@ public final class RadixTreeRequestRouter implements RequestRouter {
         return true;
     }
 
-    private static boolean isEncodedSeparator(String path, int percentIdx) {
+    private static boolean isEncodedSeparator(Lookup path, int percentIdx) {
         char hi = path.charAt(percentIdx + 1);
         char lo = path.charAt(percentIdx + 2);
         return (hi == '2' && (lo == 'f' || lo == 'F')) || (hi == '5' && (lo == 'c' || lo == 'C'));
     }
 
-    private static boolean isDotSegment(String path, int start, int end) {
+    private static boolean isDotSegment(Lookup path, int start, int end) {
         int dots = 0;
         int i = start;
         while (i < end) {
@@ -347,71 +350,168 @@ public final class RadixTreeRequestRouter implements RequestRouter {
     private static final class Node {
         String edge;
         String paramName;
-        final List<Route> exactRoutes = new ArrayList<>(2);
-        final List<Route> prefixRoutes = new ArrayList<>(2);
-        final List<Route> templateRoutes = new ArrayList<>(2);
-        final List<Node> children = new ArrayList<>(4);
-        final List<Node> paramChildren = new ArrayList<>(1);
+        final List<Route> exactBuild = new ArrayList<>(2);
+        final List<Route> prefixBuild = new ArrayList<>(2);
+        final List<Route> templateBuild = new ArrayList<>(2);
+        final List<Node> childBuild = new ArrayList<>(4);
+        final List<Node> paramBuild = new ArrayList<>(1);
+
+        // Frozen at the end of construction; the match path reads only these
+        Route[] exactRoutes = NO_ROUTES;
+        Route[] prefixRoutes = NO_ROUTES;
+        Route[] templateRoutes = NO_ROUTES;
+        Node[] children = NO_NODES;
+        Node[] paramChildren = NO_NODES;
 
         Node(String edge) {
             this.edge = Objects.requireNonNull(edge, "edge");
         }
 
         void addChild(Node child) {
-            children.add(child);
+            childBuild.add(child);
+        }
+
+        void freeze() {
+            exactRoutes = exactBuild.toArray(NO_ROUTES);
+            prefixRoutes = prefixBuild.toArray(NO_ROUTES);
+            templateRoutes = templateBuild.toArray(NO_ROUTES);
+            // Literal children, in insertion order; a literal child always has a non-empty edge
+            children = childBuild.stream().filter(n -> n.paramName == null && !n.edge.isEmpty()).toArray(Node[]::new);
+            paramChildren = paramBuild.toArray(NO_NODES);
+            for (Node n : children) {
+                n.freeze();
+            }
+            for (Node n : paramChildren) {
+                n.freeze();
+            }
         }
     }
 
-    private static final class MatchContext {
-        final String method;
-        final String path;
-        Map<String, String> params;
+    /** The router's {@link RouteLookup}: the match state, overwritten in place by every call. */
+    private static final class Lookup implements RouteLookup {
+        private static final int INITIAL_PARAMS = 4;
 
-        Route exactMatch;
-        Route templateMatch;
-        Route prefixMatch;
+        // Input: the caller's sequence and the routed view of its path part
+        private CharSequence source;
+        private String method;
+        /** Index in {@link #source} of view position 0, or -1 when the view's leading slash is not in the source. */
+        private int shift;
+        private int viewLength;
+        /** Index in {@link #source} where the query string starts (the '?'), or the source length when none. */
+        private int queryStart;
 
-        MatchContext(String method, String path) {
+        // Selection
+        private Route exactMatch;
+        private Route templateMatch;
+        private Route prefixMatch;
+        Route route;
+
+        // Template captures as offsets into the view, a stack so that backtracking pops
+        private String[] paramNames = new String[INITIAL_PARAMS];
+        private int[] paramStarts = new int[INITIAL_PARAMS];
+        private int[] paramEnds = new int[INITIAL_PARAMS];
+        private int paramCount;
+
+        void reset(String method, CharSequence source) {
             this.method = method;
-            this.path = path;
+            this.source = source;
+            this.exactMatch = null;
+            this.templateMatch = null;
+            this.prefixMatch = null;
+            this.route = null;
+            this.paramCount = 0;
         }
 
-        boolean hasExactMatch() {
-            return exactMatch != null;
+        void clear() {
+            this.route = null;
+            this.paramCount = 0;
+            this.source = null;
+        }
+
+        /**
+         * Frames the routed path inside the source: the query is excluded by position; a missing leading slash
+         * is supplied by the view, and repeated leading slashes collapse to the last of them.
+         */
+        boolean frame() {
+            final int len = source.length();
+            int pathEnd = 0;
+            while (pathEnd < len && source.charAt(pathEnd) != '?') {
+                pathEnd++;
+            }
+            queryStart = pathEnd;
+            if (pathEnd > 0 && source.charAt(0) == '/') {
+                int leading = 0;
+                while (leading + 1 < pathEnd && source.charAt(leading + 1) == '/') {
+                    leading++;
+                }
+                shift = leading;
+                viewLength = pathEnd - leading;
+            } else {
+                shift = -1;
+                viewLength = pathEnd + 1;
+            }
+            return true;
+        }
+
+        char charAt(int i) {
+            return (shift < 0 && i == 0) ? '/' : source.charAt(shift + i);
+        }
+
+        boolean regionMatches(int offset, String edge) {
+            final int n = edge.length();
+            if (offset + n > viewLength) {
+                return false;
+            }
+            for (int k = 0; k < n; k++) {
+                if (charAt(offset + k) != edge.charAt(k)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         boolean hasMatch() {
             return exactMatch != null || templateMatch != null;
         }
 
-        void addParam(String name, String value) {
-            if (params == null) {
-                params = new HashMap<>(4);
-            }
-            params.put(name, value);
+        Route bestRoute() {
+            if (exactMatch != null) return exactMatch;
+            if (templateMatch != null) return templateMatch;
+            return prefixMatch;
         }
 
-        void removeParam(String name) {
-            if (params != null) {
-                params.remove(name);
+        void pushParam(String name, int start, int end) {
+            if (paramCount == paramNames.length) {
+                int grown = paramCount * 2;
+                paramNames = java.util.Arrays.copyOf(paramNames, grown);
+                paramStarts = java.util.Arrays.copyOf(paramStarts, grown);
+                paramEnds = java.util.Arrays.copyOf(paramEnds, grown);
             }
+            paramNames[paramCount] = name;
+            paramStarts[paramCount] = start;
+            paramEnds[paramCount] = end;
+            paramCount++;
         }
 
-        void recordExactCandidates(List<Route> routes) {
+        void popParam() {
+            paramCount--;
+        }
+
+        void recordExactCandidates(Route[] routes) {
             Route chosen = selectBest(routes);
             if (chosen != null && (exactMatch == null || chosen.order() < exactMatch.order())) {
                 exactMatch = chosen;
             }
         }
 
-        void recordTemplateCandidates(List<Route> routes) {
+        void recordTemplateCandidates(Route[] routes) {
             Route chosen = selectBest(routes);
             if (chosen != null && (templateMatch == null || chosen.order() < templateMatch.order())) {
                 templateMatch = chosen;
             }
         }
 
-        void recordPrefixCandidates(List<Route> routes) {
+        void recordPrefixCandidates(Route[] routes) {
             // Candidates arrive shallowest first, so a later one is a longer prefix and always wins;
             // order only decides among routes registered on the same prefix (see selectBest)
             Route chosen = selectBest(routes);
@@ -420,10 +520,10 @@ public final class RadixTreeRequestRouter implements RequestRouter {
             }
         }
 
-        private Route selectBest(List<Route> routes) {
+        private Route selectBest(Route[] routes) {
             Route wildcard = null;
-            for (int i = 0; i < routes.size(); i++) {
-                Route r = routes.get(i);
+            for (int i = 0; i < routes.length; i++) {
+                Route r = routes[i];
                 if (r.method() == null) {
                     if (wildcard == null || r.order() < wildcard.order()) {
                         wildcard = r;
@@ -435,10 +535,91 @@ public final class RadixTreeRequestRouter implements RequestRouter {
             return wildcard;
         }
 
-        Route bestRoute() {
-            if (exactMatch != null) return exactMatch;
-            if (templateMatch != null) return templateMatch;
-            return prefixMatch;
+        // ---- RouteLookup ----
+
+        @Override
+        public boolean isMatched() {
+            return route != null;
+        }
+
+        @Override
+        public Route route() {
+            return route;
+        }
+
+        @Override
+        public String rewrittenPath() {
+            if (route == null) {
+                return null;
+            }
+            PathRewriteRule rule = route.rewriteRule();
+            // The request already is the routed path: one leading slash, and the query kept as received
+            if (rule.type() == PathRewriteRule.RewriteType.NONE && source instanceof String s
+                    && shift == 0 && viewLength > 0) {
+                return s;
+            }
+            // Rewrite the normalised path, so a request without a leading slash is rewritten like one with it
+            StringBuilder normalised = new StringBuilder(viewLength + source.length() - queryStart);
+            for (int i = 0; i < viewLength; i++) {
+                normalised.append(charAt(i));
+            }
+            normalised.append(source, queryStart, source.length());
+            return ZeroAllocPathRewriter.rewrite(normalised, rule);
+        }
+
+        @Override
+        public int pathParamCount() {
+            return route == null ? 0 : paramCount;
+        }
+
+        @Override
+        public String pathParamName(int index) {
+            checkIndex(index);
+            return paramNames[index];
+        }
+
+        @Override
+        public String pathParamValue(int index) {
+            checkIndex(index);
+            StringBuilder value = new StringBuilder(paramEnds[index] - paramStarts[index]);
+            for (int i = paramStarts[index]; i < paramEnds[index]; i++) {
+                value.append(charAt(i));
+            }
+            return value.toString();
+        }
+
+        private void checkIndex(int index) {
+            if (index < 0 || index >= pathParamCount()) {
+                throw new IndexOutOfBoundsException("capture index " + index + ", count " + pathParamCount());
+            }
+        }
+
+        @Override
+        public String pathParam(String name) {
+            for (int i = pathParamCount() - 1; i >= 0; i--) {
+                if (paramNames[i].equals(name)) {
+                    return pathParamValue(i);
+                }
+            }
+            return null;
+        }
+
+        @Override
+        public Map<String, String> pathParams() {
+            int n = pathParamCount();
+            if (n == 0) {
+                return Map.of();
+            }
+            Map<String, String> params = new HashMap<>(n * 2);
+            for (int i = 0; i < n; i++) {
+                params.put(paramNames[i], pathParamValue(i));
+            }
+            return Map.copyOf(params);
+        }
+
+        @Override
+        public RouteMatch toRouteMatch() {
+            return route == null ? RouteMatch.noMatch() : RouteMatch.matched(route, rewrittenPath(), pathParams());
         }
     }
 }

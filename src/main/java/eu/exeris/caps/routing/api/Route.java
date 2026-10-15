@@ -13,7 +13,10 @@ import java.util.Objects;
  * @param rewriteRule             path rewriting rule; non-null
  * @param requestHeaderMutations  transformations to apply to inbound request headers; {@code null} is read as empty
  * @param responseHeaderMutations transformations to apply to upstream response headers; {@code null} is read as empty
- * @param order                   precedence order (lower is preferred); the route builder defaults it to 0
+ * @param order                   tie-break between routes registered on the same path pattern and method class
+ *                                (lower is preferred); the route builder defaults it to 0. It does not rank
+ *                                routes on different patterns: the router's precedence rules (exact, then
+ *                                template, then longest prefix) decide those
  * @since 0.1.0
  */
 public record Route(

@@ -7,7 +7,10 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Result of matching an incoming HTTP request against the routing table.
+ * Immutable result of matching an incoming HTTP request against the routing table.
+ *
+ * <p>This is the allocating form of a result: it owns a rewritten path string and a copy of the captured
+ * parameters. A hot path that must not allocate per request uses a {@link RouteLookup} instead.
  *
  * @since 0.1.0
  */
@@ -60,15 +63,20 @@ public final class RouteMatch {
      * Transforms inbound request headers according to the route's mutations and context claims.
      *
      * <p>An inject-claim mutation always removes the client-supplied header of that name, and adds the
-     * injected header only when the claim is present and safe to carry in a header; with no claims, or an
-     * absent claim, the client's header is dropped and nothing replaces it.
+     * injected header only when the claim is present, not blank and safe to carry in a header; with no
+     * claims, an absent claim or a blank claim, the client's header is dropped and nothing replaces it.
      *
      * @param inboundHeaders original inbound headers; non-null
      * @param contextClaims  claims from auth/identity context (e.g. JWT "sub", "tid"); nullable
      * @return transformed header list; non-null
      */
     public List<HeaderEntry> transformRequestHeaders(List<HeaderEntry> inboundHeaders, Map<String, String> contextClaims) {
-        if (!matched || route.requestHeaderMutations().isEmpty()) {
+        return transformRequestHeaders(matched ? route : null, inboundHeaders, contextClaims);
+    }
+
+    static List<HeaderEntry> transformRequestHeaders(Route route, List<HeaderEntry> inboundHeaders,
+                                                     Map<String, String> contextClaims) {
+        if (route == null || route.requestHeaderMutations().isEmpty()) {
             return inboundHeaders != null ? inboundHeaders : List.of();
         }
 
@@ -166,11 +174,17 @@ public final class RouteMatch {
     /**
      * Transforms upstream response headers according to the route's response mutations.
      *
+     * <p>An inject-claim mutation has no meaning on a response and is ignored here.
+     *
      * @param responseHeaders original upstream response headers; non-null
      * @return transformed header list; non-null
      */
     public List<HeaderEntry> transformResponseHeaders(List<HeaderEntry> responseHeaders) {
-        if (!matched || route.responseHeaderMutations().isEmpty()) {
+        return transformResponseHeaders(matched ? route : null, responseHeaders);
+    }
+
+    static List<HeaderEntry> transformResponseHeaders(Route route, List<HeaderEntry> responseHeaders) {
+        if (route == null || route.responseHeaderMutations().isEmpty()) {
             return responseHeaders != null ? responseHeaders : List.of();
         }
 
