@@ -1,0 +1,29 @@
+{
+  "schemaVersion" : 2,
+  "stamp" : {
+    "validated" : true,
+    "compositionVersion" : "0.0.0",
+    "contentBinding" : "sha256:37d998eab2fb33dda2abd7fca174a4cb69e3fdbf21bc294c3419e4491a8e4ff6"
+  },
+  "modules" : [
+    {
+      "name" : "RequestRoutingModule",
+      "packageName" : "eu.exeris.caps.routing",
+      "qualifiedName" : "eu.exeris.caps.routing.RequestRoutingModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.routing.api.RequestRouter",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    }
+  ],
+  "resolutions" : [ ],
+  "initOrder" : [
+    "eu.exeris.caps.routing.RequestRoutingModule"
+  ],
+  "warnings" : [ ]
+}
