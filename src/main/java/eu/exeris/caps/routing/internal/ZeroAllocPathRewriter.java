@@ -3,7 +3,9 @@ package eu.exeris.caps.routing.internal;
 import eu.exeris.caps.routing.api.PathRewriteRule;
 
 /**
- * Utility for applying path rewrites while minimizing allocations; the result never begins with {@code //}.
+ * Applies a route's path rewrite and preserves the query string; the result never begins with {@code //}.
+ *
+ * <p>Each call allocates the result string (and the intermediate strings of the rewrite).
  */
 public final class ZeroAllocPathRewriter {
 

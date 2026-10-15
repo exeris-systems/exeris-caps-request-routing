@@ -21,13 +21,6 @@ jobs:
         # sources still compile on the next JDK. Both rows produce class-file major 69.
         java: ['25', '26']
 
-    env:
-      # exeris-kernel is resolved from GitHub Packages, which asks for a token even for a public
-      # package, and a repository's own GITHUB_TOKEN cannot read packages published by another
-      # repository. PACKAGES_READ_TOKEN is a classic PAT with read:packages, set as a repository or
-      # organisation secret. .github/maven-settings.xml is the only place it is used.
-      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
-
     steps:
       - name: Checkout exeris-caps-request-routing
         uses: actions/checkout@v7
@@ -35,7 +28,7 @@ jobs:
           path: exeris-caps-request-routing
 
       # The SDK and the codegen chain are not published to a Maven repository, so both are built
-      # from source at the release tag matching the version in pom.xml. An immutable ref keeps an
+      # from source at the release tag matching the version in pom.xml. A release tag keeps an
       # unrelated upstream commit from turning this build red.
       - name: Checkout exeris-sdk (v0.12.0 — matches exeris.sdk.version in the POM)
         uses: actions/checkout@v7
@@ -58,7 +51,14 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
 
+      # exeris-kernel is resolved from GitHub Packages, which asks for a token even for a public
+      # package, and a repository's own GITHUB_TOKEN cannot read packages published by another
+      # repository. PACKAGES_READ_TOKEN is a classic PAT with read:packages, set as a repository or
+      # organisation secret. It is set only on the steps that need it: this check and the two Maven
+      # steps that pass .github/maven-settings.xml.
       - name: Check that the package-read token is set
+        env:
+          PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
         run: |
           if [ -z "${PACKAGES_READ_TOKEN}" ]; then
             echo "::error::PACKAGES_READ_TOKEN is not set, so exeris-kernel cannot be resolved from GitHub Packages"
@@ -81,10 +81,14 @@ jobs:
       # processor writes the capability metadata it reads only during compile.
       - name: Seed capability metadata (first pass, codegen skipped)
         working-directory: exeris-caps-request-routing
+        env:
+          PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
         run: mvn -B -ntp -s .github/maven-settings.xml compile -Dexeris.codegen.skip=true
 
       - name: mvn verify (second pass — generates, validates, scans the Wall)
         working-directory: exeris-caps-request-routing
+        env:
+          PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
         run: mvn -B -ntp -s .github/maven-settings.xml verify
 
       - name: Assert the cap manifest was emitted and stamped

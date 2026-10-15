@@ -227,4 +227,19 @@ class RadixTreeRequestRouterTest {
 
         assertThat(router.match("GET", "api/x").rewrittenPath()).isEqualTo("/x");
     }
+
+    @Test
+    @DisplayName("a leading double slash is routed on the path the upstream receives")
+    void leadingDoubleSlashRoutesOnTheForwardedPath() {
+        RequestRouter router = RequestRouters.builder()
+                .route("admin").pathPrefix("/admin").targetUri("http://admin:9000").and()
+                .route("root").pathPrefix("/").targetUri("http://root:9000").and()
+                .build();
+
+        RouteMatch match = router.match("GET", "//admin/x");
+
+        assertThat(match.route().id()).isEqualTo("admin");
+        assertThat(match.rewrittenPath()).isEqualTo("/admin/x");
+        assertThat(router.match("GET", "///admin").route().id()).isEqualTo("admin");
+    }
 }

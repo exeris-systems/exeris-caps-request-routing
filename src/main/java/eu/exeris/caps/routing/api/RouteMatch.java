@@ -59,6 +59,10 @@ public final class RouteMatch {
     /**
      * Transforms inbound request headers according to the route's mutations and context claims.
      *
+     * <p>An inject-claim mutation always removes the client-supplied header of that name, and adds the
+     * injected header only when the claim is present and safe to carry in a header; with no claims, or an
+     * absent claim, the client's header is dropped and nothing replaces it.
+     *
      * @param inboundHeaders original inbound headers; non-null
      * @param contextClaims  claims from auth/identity context (e.g. JWT "sub", "tid"); nullable
      * @return transformed header list; non-null

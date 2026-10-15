@@ -23,7 +23,8 @@ import java.util.Objects;
  * the longest prefix wins and {@code order} breaks ties on the same prefix. Within one path pattern a
  * route naming the request method beats a method-agnostic (wildcard) route, whatever their {@code order}.
  * A template placeholder captures one non-empty segment, so {@code /a/} does not match {@code /a/{id}}.
- * A path without a leading slash is treated as if it had one.
+ * A path without a leading slash is treated as if it had one, and repeated leading slashes collapse to one,
+ * so the route is chosen on the same path the upstream receives.
  *
  * @since 0.1.0
  */
@@ -206,6 +207,15 @@ public final class RadixTreeRequestRouter implements RequestRouter {
         String searchPath = queryIdx < 0 ? fullPath : fullPath.substring(0, queryIdx);
         if (!searchPath.startsWith("/")) {
             searchPath = "/" + searchPath;
+        }
+        // Routing and the upstream must see one path: leading slashes collapse to one before matching,
+        // the same way the rewriter collapses them, so //admin/x routes as /admin/x
+        int leading = 0;
+        while (leading + 1 < searchPath.length() && searchPath.charAt(leading + 1) == '/') {
+            leading++;
+        }
+        if (leading > 0) {
+            searchPath = searchPath.substring(leading);
         }
 
         if (!isCanonicalPath(searchPath)) {

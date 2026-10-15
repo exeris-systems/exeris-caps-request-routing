@@ -11,8 +11,8 @@ import java.util.Objects;
  * @param pattern                 path matching pattern; non-null
  * @param targetUri               destination upstream URI or cluster authority; non-null
  * @param rewriteRule             path rewriting rule; non-null
- * @param requestHeaderMutations  transformations to apply to inbound request headers; non-null
- * @param responseHeaderMutations transformations to apply to upstream response headers; non-null
+ * @param requestHeaderMutations  transformations to apply to inbound request headers; {@code null} is read as empty
+ * @param responseHeaderMutations transformations to apply to upstream response headers; {@code null} is read as empty
  * @param order                   precedence order (lower executes earlier); default 0
  * @since 0.1.0
  */

@@ -63,7 +63,7 @@ public final class PathRewriteRule {
     /**
      * Applies this rewrite rule to the given request path.
      *
-     * @param path inbound request path; non-null
+     * @param path inbound request path; a {@code null} path yields {@code "/"}
      * @return rewritten path; non-null
      */
     public String rewrite(CharSequence path) {
