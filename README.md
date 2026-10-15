@@ -1,13 +1,13 @@
 # exeris-caps-request-routing
 
-L7 request routing as an Exeris capability. `RequestRouter` resolves an HTTP method and path against a route table that is compiled into a radix tree and returns a `RouteMatch`.
+L7 request routing as an Exeris capability. `RequestRouter` resolves an HTTP method and path against a route table that is compiled into a radix tree and returns a `RouteMatch`, or fills a caller-owned `RouteLookup` without allocating.
 
 Status: proof of concept, built against `exeris-kernel` 0.13.0-SNAPSHOT on JDK 25 LTS. The API is not stable and no artefact has been published.
 
 ## Where it sits
 
 - **Layer:** Layer 3 — Gateway policy, in the Tier 2 capability map of [`high-level-architecture.md`](https://github.com/exeris-systems/exeris-docs/blob/main/high-level-architecture.md) §3.2.
-- **Depends on:** nothing beyond `exeris-sdk-annotations` (`provided`). The routing types carry no transport framing and no kernel type.
+- **Depends on:** `exeris-sdk-annotations` (`provided`) and `exeris-kernel-spi`, used only for the entitlement requirement. The routing types carry no transport framing and no kernel type.
 - **Provides** (`@Provides`, contract version 0.1.0): `RequestRouter`.
 - **Requires:** no other capability.
 - **Wall (ADR-055):** `eu.exeris.caps.routing.api` is the cross-cap surface; `eu.exeris.caps.routing.internal` is private, and a sibling cap reaching into it fails the build. No Spring, servlet, Netty or reactive type may appear (ADR-006).

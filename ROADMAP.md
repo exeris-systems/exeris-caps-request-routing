@@ -1,3 +1,12 @@
+---
+title: "exeris-caps-request-routing — Roadmap"
+type: roadmap
+visibility: public
+owning-repo: exeris-caps-request-routing
+status: active
+last-verified: 2026-10-15
+---
+
 # exeris-caps-request-routing — Roadmap
 
 Status: **poc**. Version line: **0.1.x**. Licence: Exeris Commercial License (ADR-023), entitlement id
@@ -13,9 +22,10 @@ Milestones are versions, not dates. Dates appear only on what has shipped; nothi
 ## Where this sits
 
 Layer 3 gateway policy cap. Provides `RequestRouter`: a radix-tree matcher over exact, prefix and
-`{template}` routes, with method filtering, deterministic precedence (`order`, then `id`), path rewrite
+`{template}` routes, with method filtering, deterministic precedence (exact, then template, then longest prefix; `order`, then `id`, break ties between routes on the same pattern, and a route naming the method beats a method-agnostic one on the same pattern), path rewrite
 (`stripPrefix`, `prefixRewrite`, `exactRewrite`) and request/response header mutation, built through
-`RequestRouters.builder()`. Zero runtime dependencies; no `@Requires`. 13 tests across three classes.
+`RequestRouters.builder()`. `match(method, path, RouteLookup)` resolves into a caller-owned, reused `RouteLookup` and allocates nothing in steady state for exact, prefix and template routes (captures are recorded as offsets and read on demand); `RoutingAllocationTest` measures it. The two-argument `match` returns an immutable `RouteMatch` and allocates. One compile dependency, `exeris-kernel-spi`, used only for the `RequestRoutingEntitlement` requirement; no
+`@Requires`. Test totals are in the surefire report of the current head.
 
 Gaps between the inventory and the code, found in the code:
 
