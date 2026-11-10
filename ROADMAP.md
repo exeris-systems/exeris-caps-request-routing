@@ -54,7 +54,7 @@ Gaps between the inventory and the code, found in the code:
 - [ ] Code imported; repository files (`README`, `CLAUDE.md`, `LICENSE`, `SECURITY`, `CONTRIBUTING`, `CODEOWNERS`, ADR link stubs) added
 - [x] `@Provides(RequestRouter)` at contract `0.1.0`
 - [x] Kernel `0.13.1`, SDK `0.13.3` and tooling `0.11.0`, resolved from Maven Central
-- [x] Artefacts stay `0.1.0-SNAPSHOT`; the first published artefact is the `0.4.0` snapshot
+- [x] Artefacts stay `0.1.0-SNAPSHOT` while no kernel release exists; a non-snapshot `0.1.0` is cut only after one (kernel `0.13.x` is released)
 - [x] Licence enforcement: `RequestRoutingEntitlement` (id `exeris-caps-request-routing`), `META-INF/services`
       registration, TCK test and boot test against the kernel's Phase 0 gate
 - [ ] `build.yml` green on JDK 25 and 26; `cap-manifest.json` committed through the two-pass build
