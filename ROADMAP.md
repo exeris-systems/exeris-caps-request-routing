@@ -41,7 +41,6 @@ Gaps between the inventory and the code, found in the code:
 
 | Constraint | Effect here | Owner |
 |---|---|---|
-| Kernel licence gate (ADR-088, ADR-089) in kernel `0.13.0-SNAPSHOT` | `EntitlementRequirement` resolvable only from that line | `exeris-kernel` |
 | `RequestFilterChain` contract (ADR-099) | 0.2.0 binds to it | `exeris-caps-service-boundary-core` |
 | ADR on the response-side seam (gateway-core 0.2.0) | Entry condition: no policy cap starts its 0.2.0 before it is accepted | `exeris-caps-gateway-core`, `exeris-docs` |
 | `RouteMatch` name clash: this cap and service-boundary-core both define one | The binding must map one to the other | both caps |
@@ -53,10 +52,10 @@ Gaps between the inventory and the code, found in the code:
 
 - [ ] Defects found in the pre-import review are fixed in the import, each with a test
 - [ ] Code imported; repository files (`README`, `CLAUDE.md`, `LICENSE`, `SECURITY`, `CONTRIBUTING`, `CODEOWNERS`, ADR link stubs) added
-- [ ] `@Provides(RequestRouter)` at contract `0.1.0`
-- [ ] Kernel `0.13.0-SNAPSHOT`; SDK `0.12.0` and tooling `0.10.0` pins aligned with the sibling caps
-- [ ] Artefacts stay `0.1.0-SNAPSHOT` until kernel `0.13.0` is released; a non-snapshot `0.1.0` is cut only after that
-- [ ] Licence enforcement: `RequestRoutingEntitlement` (id `exeris-caps-request-routing`), `META-INF/services`
+- [x] `@Provides(RequestRouter)` at contract `0.1.0`
+- [x] Kernel `0.13.1`, SDK `0.13.3` and tooling `0.11.0`, resolved from Maven Central
+- [x] Artefacts stay `0.1.0-SNAPSHOT`; the first published artefact is the `0.4.0` snapshot
+- [x] Licence enforcement: `RequestRoutingEntitlement` (id `exeris-caps-request-routing`), `META-INF/services`
       registration, TCK test and boot test against the kernel's Phase 0 gate
 - [ ] `build.yml` green on JDK 25 and 26; `cap-manifest.json` committed through the two-pass build
 
